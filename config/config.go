@@ -17,6 +17,11 @@ type Config struct {
 	S3Bucket           string
 	KafkaBrokers       string
 	OutboxPollInterval time.Duration
+	KafkaConsumerGroup string
+	KafkaRequestTopic  string
+	RedisAddr          string
+	RedisPassword      string
+	DedupTTL           time.Duration
 }
 
 func Load() *Config {
@@ -34,6 +39,11 @@ func Load() *Config {
 		S3Bucket:           getEnv("S3_BUCKET", "appraisal-inspections"),
 		KafkaBrokers:       getEnv("KAFKA_BROKERS", "localhost:9092"),
 		OutboxPollInterval: getDurationEnv("OUTBOX_POLL_INTERVAL", time.Second),
+		KafkaConsumerGroup: getEnv("KAFKA_CONSUMER_GROUP", "inspect-service"),
+		KafkaRequestTopic:  getEnv("KAFKA_REQUEST_TOPIC", "request.events"),
+		RedisAddr:          getEnv("REDIS_ADDR", "localhost:6382"),
+		RedisPassword:      getEnv("REDIS_PASSWORD", ""),
+		DedupTTL:           getDurationEnv("DEDUP_TTL", 48*time.Hour),
 	}
 }
 

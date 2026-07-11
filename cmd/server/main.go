@@ -25,12 +25,15 @@ import (
 	"github.com/MicahParks/keyfunc/v3"
 	_ "github.com/appraisal-crm/inspect-service/api"
 	"github.com/appraisal-crm/inspect-service/config"
+	"github.com/appraisal-crm/inspect-service/internal/dedup"
 	"github.com/appraisal-crm/inspect-service/internal/handler"
+	"github.com/appraisal-crm/inspect-service/internal/kafka"
 	"github.com/appraisal-crm/inspect-service/internal/outbox"
 	"github.com/appraisal-crm/inspect-service/internal/repository"
 	"github.com/appraisal-crm/inspect-service/internal/service"
 	"github.com/appraisal-crm/inspect-service/internal/storage"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 )
 
 func main() {
@@ -60,6 +63,15 @@ func main() {
 		os.Exit(1)
 	}
 	slog.Info("JWKS initialized", "url", cfg.JWKSUrl)
+
+	// Redis backs the consumer's event_id dedup.
+	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword})
+	defer rdb.Close()
+	if err := rdb.Ping(context.Background()).Err(); err != nil {
+		slog.Error("redis is not reachable", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("connected to redis")
 
 	// Wire the dependency chain: repo + storage → service → router.
 	store := storage.NewStubStorage(cfg.S3Endpoint, cfg.S3Bucket)
@@ -91,6 +103,18 @@ func main() {
 	}()
 	slog.Info("outbox relay started", "interval", cfg.OutboxPollInterval)
 
+	// Kafka consumer: turns request.status_changed (scheduled) into inspections.
+	deduper := dedup.New(rdb, cfg.DedupTTL)
+	consumer := kafka.NewConsumer(strings.Split(cfg.KafkaBrokers, ","), cfg.KafkaConsumerGroup, cfg.KafkaRequestTopic, deduper, svc)
+	consumerDone := make(chan struct{})
+	go func() {
+		if err := consumer.Run(ctx); err != nil {
+			slog.Error("kafka consumer stopped", "error", err)
+		}
+		close(consumerDone)
+	}()
+	slog.Info("kafka consumer started", "topic", cfg.KafkaRequestTopic, "group", cfg.KafkaConsumerGroup)
+
 	errCh := make(chan error, 1)
 	go func() {
 		slog.Info("starting server", "addr", addr)
@@ -113,9 +137,14 @@ func main() {
 			slog.Error("server error", "error", err)
 			os.Exit(1)
 		}
-		// ctx is already cancelled, so the relay loop is exiting — wait for it.
+		// ctx is already cancelled, so the background loops are exiting.
+		if err := consumer.Close(); err != nil {
+			slog.Error("failed to close kafka consumer", "error", err)
+		}
+		<-consumerDone
 		<-relayDone
 		slog.Info("outbox relay stopped")
+		slog.Info("kafka consumer stopped")
 		slog.Info("server stopped")
 	}
 }
