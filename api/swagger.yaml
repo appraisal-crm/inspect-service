@@ -1,0 +1,285 @@
+basePath: /
+definitions:
+  domain.Inspection:
+    properties:
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      inspector_id:
+        description: nil until an appraiser assigns one
+        type: string
+      notes:
+        type: string
+      photos:
+        description: loaded on demand, not a column
+        items:
+          $ref: '#/definitions/domain.Photo'
+        type: array
+      property_data:
+        description: free-form object data
+        type: object
+      request_id:
+        type: string
+      scheduled_at:
+        type: string
+      status:
+        $ref: '#/definitions/domain.Status'
+      updated_at:
+        type: string
+    type: object
+  domain.Photo:
+    properties:
+      id:
+        type: string
+      inspection_id:
+        type: string
+      s3_key:
+        type: string
+      uploaded_at:
+        type: string
+    type: object
+  domain.Status:
+    enum:
+    - scheduled
+    - completed
+    type: string
+    x-enum-varnames:
+    - StatusScheduled
+    - StatusCompleted
+  handler.errorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+  handler.listAllResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/domain.Inspection'
+        type: array
+      limit:
+        type: integer
+      page:
+        type: integer
+    type: object
+  handler.updateInspectionDTO:
+    properties:
+      inspector_id:
+        type: string
+      notes:
+        maxLength: 5000
+        type: string
+      property_data:
+        type: object
+    type: object
+host: localhost:8082
+info:
+  contact: {}
+  description: API for managing property inspections
+  title: Inspect Service API
+  version: "1.0"
+paths:
+  /health:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Health check
+      tags:
+      - system
+  /inspections:
+    get:
+      description: Inspectors get inspections assigned to them. Appraiser/admin get
+        all (paginated) or filter by inspector_id.
+      parameters:
+      - description: Filter by inspector ID (appraiser/admin only)
+        in: query
+        name: inspector_id
+        type: string
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Page size (default 20, max 100)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.listAllResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List inspections
+      tags:
+      - inspections
+  /inspections/{id}:
+    get:
+      parameters:
+      - description: Inspection ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.Inspection'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get inspection by ID
+      tags:
+      - inspections
+    patch:
+      consumes:
+      - application/json
+      description: Inspector fills notes/property_data on their own inspection; assigning
+        inspector_id is appraiser/admin only.
+      parameters:
+      - description: Inspection ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.updateInspectionDTO'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.Inspection'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update inspection fields
+      tags:
+      - inspections
+  /inspections/{id}/complete:
+    post:
+      description: Marks the inspection completed and emits inspect.completed. Inspector
+        only.
+      parameters:
+      - description: Inspection ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.Inspection'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Complete an inspection
+      tags:
+      - inspections
+securityDefinitions:
+  BearerAuth:
+    description: Type "Bearer" followed by a space and your token
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
