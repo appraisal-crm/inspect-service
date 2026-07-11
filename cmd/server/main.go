@@ -26,6 +26,7 @@ import (
 	_ "github.com/appraisal-crm/inspect-service/api"
 	"github.com/appraisal-crm/inspect-service/config"
 	"github.com/appraisal-crm/inspect-service/internal/handler"
+	"github.com/appraisal-crm/inspect-service/internal/outbox"
 	"github.com/appraisal-crm/inspect-service/internal/repository"
 	"github.com/appraisal-crm/inspect-service/internal/service"
 	"github.com/appraisal-crm/inspect-service/internal/storage"
@@ -79,6 +80,17 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Outbox relay: publishes inspect.completed events written by the service.
+	producer := outbox.NewProducer(strings.Split(cfg.KafkaBrokers, ","))
+	defer producer.Close()
+	relay := outbox.NewRelay(db, producer, cfg.OutboxPollInterval)
+	relayDone := make(chan struct{})
+	go func() {
+		relay.Run(ctx)
+		close(relayDone)
+	}()
+	slog.Info("outbox relay started", "interval", cfg.OutboxPollInterval)
+
 	errCh := make(chan error, 1)
 	go func() {
 		slog.Info("starting server", "addr", addr)
@@ -101,6 +113,9 @@ func main() {
 			slog.Error("server error", "error", err)
 			os.Exit(1)
 		}
+		// ctx is already cancelled, so the relay loop is exiting — wait for it.
+		<-relayDone
+		slog.Info("outbox relay stopped")
 		slog.Info("server stopped")
 	}
 }
