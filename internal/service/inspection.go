@@ -8,15 +8,17 @@ import (
 
 	"github.com/appraisal-crm/inspect-service/internal/domain"
 	"github.com/appraisal-crm/inspect-service/internal/repository"
+	"github.com/appraisal-crm/inspect-service/internal/storage"
 	"github.com/google/uuid"
 )
 
 type inspectionService struct {
-	repo repository.InspectionRepository
+	repo    repository.InspectionRepository
+	storage storage.PhotoStorage
 }
 
-func NewInspectionService(repo repository.InspectionRepository) InspectionService {
-	return &inspectionService{repo: repo}
+func NewInspectionService(repo repository.InspectionRepository, store storage.PhotoStorage) InspectionService {
+	return &inspectionService{repo: repo, storage: store}
 }
 
 func (s *inspectionService) CreateFromRequest(ctx context.Context, requestID uuid.UUID) (bool, error) {
@@ -127,6 +129,41 @@ func (s *inspectionService) Complete(ctx context.Context, id uuid.UUID) (*domain
 
 	slog.InfoContext(ctx, "inspection completed", "inspection_id", id, "request_id", insp.RequestID)
 	return insp, nil
+}
+
+func (s *inspectionService) AddPhoto(ctx context.Context, id uuid.UUID, filename string) (*PhotoResult, error) {
+	insp, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	// Photos belong to the field visit; once completed the inspection is frozen.
+	if insp.Status != domain.StatusScheduled {
+		slog.WarnContext(ctx, "cannot add photo to a completed inspection", "inspection_id", id)
+		return nil, domain.ErrInvalidStatus
+	}
+
+	key := s.storage.KeyFor(id, filename)
+	uploadURL, err := s.storage.PresignUpload(ctx, key)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to presign upload", "error", err, "inspection_id", id)
+		return nil, err
+	}
+
+	photo := domain.Photo{
+		ID:           uuid.New(),
+		InspectionID: id,
+		S3Key:        key,
+		UploadedAt:   time.Now(),
+	}
+	if err := s.repo.AddPhoto(ctx, &photo); err != nil {
+		slog.ErrorContext(ctx, "failed to add photo", "error", err, "inspection_id", id)
+		return nil, err
+	}
+	slog.InfoContext(ctx, "photo registered", "inspection_id", id, "photo_id", photo.ID)
+	return &PhotoResult{Photo: photo, UploadURL: uploadURL}, nil
 }
 
 func (s *inspectionService) ListByInspectorID(ctx context.Context, inspectorID uuid.UUID) ([]*domain.Inspection, error) {

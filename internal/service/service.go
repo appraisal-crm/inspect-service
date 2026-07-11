@@ -16,6 +16,13 @@ type UpdateInput struct {
 	PropertyData json.RawMessage
 }
 
+// PhotoResult is returned when a photo slot is registered: the stored row plus
+// the URL the client uploads the image bytes to.
+type PhotoResult struct {
+	Photo     domain.Photo
+	UploadURL string
+}
+
 // InspectionService is the business-logic contract used by the HTTP handlers and
 // the Kafka consumer.
 type InspectionService interface {
@@ -25,6 +32,8 @@ type InspectionService interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Inspection, error)
 	Update(ctx context.Context, id uuid.UUID, in UpdateInput) (*domain.Inspection, error)
 	Complete(ctx context.Context, id uuid.UUID) (*domain.Inspection, error)
+	// AddPhoto registers a photo slot and returns a presigned upload URL.
+	AddPhoto(ctx context.Context, id uuid.UUID, filename string) (*PhotoResult, error)
 	ListByInspectorID(ctx context.Context, inspectorID uuid.UUID) ([]*domain.Inspection, error)
 	ListAll(ctx context.Context, limit, offset int) ([]*domain.Inspection, error)
 }

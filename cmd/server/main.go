@@ -28,6 +28,7 @@ import (
 	"github.com/appraisal-crm/inspect-service/internal/handler"
 	"github.com/appraisal-crm/inspect-service/internal/repository"
 	"github.com/appraisal-crm/inspect-service/internal/service"
+	"github.com/appraisal-crm/inspect-service/internal/storage"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -59,9 +60,10 @@ func main() {
 	}
 	slog.Info("JWKS initialized", "url", cfg.JWKSUrl)
 
-	// Wire the dependency chain: repo → service → router.
+	// Wire the dependency chain: repo + storage → service → router.
+	store := storage.NewStubStorage(cfg.S3Endpoint, cfg.S3Bucket)
 	repo := repository.NewPostgresRepository(db)
-	svc := service.NewInspectionService(repo)
+	svc := service.NewInspectionService(repo, store)
 	router := handler.NewRouter(svc, jwks, strings.Split(cfg.AllowedOrigins, ","))
 
 	addr := fmt.Sprintf(":%s", cfg.ServerPort)

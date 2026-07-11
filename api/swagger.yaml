@@ -49,6 +49,15 @@ definitions:
     x-enum-varnames:
     - StatusScheduled
     - StatusCompleted
+  handler.addPhotoDTO:
+    properties:
+      filename:
+        maxLength: 255
+        minLength: 1
+        type: string
+    required:
+    - filename
+    type: object
   handler.errorResponse:
     properties:
       error:
@@ -64,6 +73,13 @@ definitions:
         type: integer
       page:
         type: integer
+    type: object
+  handler.photoResponse:
+    properties:
+      photo:
+        $ref: '#/definitions/domain.Photo'
+      upload_url:
+        type: string
     type: object
   handler.updateInspectionDTO:
     properties:
@@ -274,6 +290,60 @@ paths:
       security:
       - BearerAuth: []
       summary: Complete an inspection
+      tags:
+      - inspections
+  /inspections/{id}/photos:
+    post:
+      consumes:
+      - application/json
+      description: Returns the object key and a presigned URL to upload the image
+        bytes to.
+      parameters:
+      - description: Inspection ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Photo filename
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.addPhotoDTO'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.photoResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Register an inspection photo
       tags:
       - inspections
 securityDefinitions:

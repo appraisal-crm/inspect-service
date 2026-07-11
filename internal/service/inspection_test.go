@@ -43,6 +43,14 @@ func (m *mockRepo) ListAll(ctx context.Context, limit, offset int) ([]*domain.In
 	return nil, nil
 }
 
+// stubStorage satisfies storage.PhotoStorage without any I/O.
+type stubStorage struct{}
+
+func (stubStorage) KeyFor(id uuid.UUID, filename string) string { return "key/" + filename }
+func (stubStorage) PresignUpload(_ context.Context, key string) (string, error) {
+	return "https://upload/" + key, nil
+}
+
 func TestCreateFromRequest(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -61,7 +69,7 @@ func TestCreateFromRequest(t *testing.T) {
 				assert.Equal(t, domain.StatusScheduled, insp.Status) // always born scheduled
 				return tt.repoCreated, tt.repoErr
 			}}
-			svc := NewInspectionService(repo)
+			svc := NewInspectionService(repo, stubStorage{})
 			created, err := svc.CreateFromRequest(context.Background(), uuid.New())
 			if tt.wantErr {
 				require.Error(t, err)
@@ -126,7 +134,7 @@ func TestComplete(t *testing.T) {
 			if tt.completeFn != nil {
 				repo.completeFn = tt.completeFn(t)
 			}
-			svc := NewInspectionService(repo)
+			svc := NewInspectionService(repo, stubStorage{})
 			out, err := svc.Complete(context.Background(), id)
 			if tt.wantErr != nil {
 				require.ErrorIs(t, err, tt.wantErr)
@@ -149,7 +157,7 @@ func TestUpdateAppliesFields(t *testing.T) {
 		},
 		updateFn: func(_ context.Context, _ *domain.Inspection, _ time.Time) error { return nil },
 	}
-	svc := NewInspectionService(repo)
+	svc := NewInspectionService(repo, stubStorage{})
 	out, err := svc.Update(context.Background(), id, UpdateInput{
 		InspectorID:  &newInspector,
 		Notes:        &notes,
@@ -170,7 +178,45 @@ func TestUpdateConflict(t *testing.T) {
 			return repository.ErrConflict
 		},
 	}
-	svc := NewInspectionService(repo)
+	svc := NewInspectionService(repo, stubStorage{})
 	_, err := svc.Update(context.Background(), uuid.New(), UpdateInput{})
 	require.ErrorIs(t, err, domain.ErrConflict)
+}
+
+func TestAddPhotoRejectsCompleted(t *testing.T) {
+	repo := &mockRepo{
+		getFn: func(_ context.Context, _ uuid.UUID) (*domain.Inspection, error) {
+			return &domain.Inspection{ID: uuid.New(), Status: domain.StatusCompleted}, nil
+		},
+	}
+	svc := NewInspectionService(repo, stubStorage{})
+	_, err := svc.AddPhoto(context.Background(), uuid.New(), "photo.jpg")
+	require.ErrorIs(t, err, domain.ErrInvalidStatus)
+}
+
+func TestAddPhotoSuccess(t *testing.T) {
+	var savedKey string
+	repo := &mockRepo{
+		getFn: func(_ context.Context, _ uuid.UUID) (*domain.Inspection, error) {
+			return &domain.Inspection{ID: uuid.New(), Status: domain.StatusScheduled}, nil
+		},
+	}
+	// Override AddPhoto to capture the stored key via a local closure repo.
+	capRepo := &captureRepo{mockRepo: repo, onAdd: func(p *domain.Photo) { savedKey = p.S3Key }}
+	svc := NewInspectionService(capRepo, stubStorage{})
+	res, err := svc.AddPhoto(context.Background(), uuid.New(), "roof.jpg")
+	require.NoError(t, err)
+	assert.Equal(t, "key/roof.jpg", savedKey)
+	assert.Equal(t, "https://upload/key/roof.jpg", res.UploadURL)
+}
+
+// captureRepo wraps mockRepo to observe AddPhoto without changing the shared mock.
+type captureRepo struct {
+	*mockRepo
+	onAdd func(*domain.Photo)
+}
+
+func (c *captureRepo) AddPhoto(ctx context.Context, p *domain.Photo) error {
+	c.onAdd(p)
+	return nil
 }

@@ -12,6 +12,8 @@ type Config struct {
 	DatabaseURL    string
 	JWKSUrl        string
 	AllowedOrigins string
+	S3Endpoint     string
+	S3Bucket       string
 }
 
 func Load() *Config {
@@ -25,6 +27,8 @@ func Load() *Config {
 		DatabaseURL:    dbURL,
 		JWKSUrl:        getEnv("JWKS_URL", "http://localhost:8180/realms/appraisal/protocol/openid-connect/certs"),
 		AllowedOrigins: getEnv("ALLOWED_ORIGINS", "*"),
+		S3Endpoint:     getEnv("S3_ENDPOINT", "https://storage.yandexcloud.net"),
+		S3Bucket:       getEnv("S3_BUCKET", "appraisal-inspections"),
 	}
 }
 

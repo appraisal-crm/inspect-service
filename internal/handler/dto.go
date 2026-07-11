@@ -14,6 +14,17 @@ type updateInspectionDTO struct {
 	PropertyData json.RawMessage `json:"property_data" swaggertype:"object"`
 }
 
+// addPhotoDTO — the client sends the original filename; we build the S3 key.
+type addPhotoDTO struct {
+	Filename string `json:"filename" validate:"required,min=1,max=255"`
+}
+
+// photoResponse returns the stored row plus the URL to upload the bytes to.
+type photoResponse struct {
+	Photo     domain.Photo `json:"photo"`
+	UploadURL string       `json:"upload_url"`
+}
+
 // listAllResponse is the paginated envelope for appraiser/admin list-all.
 type listAllResponse struct {
 	Data  []*domain.Inspection `json:"data"`

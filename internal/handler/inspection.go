@@ -233,6 +233,58 @@ func (h *inspectionHandler) Complete(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, completed)
 }
 
+// AddPhoto godoc
+// @Summary     Register an inspection photo
+// @Description Returns the object key and a presigned URL to upload the image bytes to.
+// @Tags        inspections
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       id path string true "Inspection ID"
+// @Param       body body addPhotoDTO true "Photo filename"
+// @Success     201 {object} photoResponse
+// @Failure     400 {object} errorResponse
+// @Failure     401 {object} errorResponse
+// @Failure     403 {object} errorResponse
+// @Failure     404 {object} errorResponse
+// @Failure     422 {object} errorResponse
+// @Failure     500 {object} errorResponse
+// @Router      /inspections/{id}/photos [post]
+func (h *inspectionHandler) AddPhoto(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseID(w, r)
+	if !ok {
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	var dto addPhotoDTO
+	if err := json.NewDecoder(r.Body).Decode(&dto); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := validate.Struct(dto); err != nil {
+		respondError(w, http.StatusBadRequest, firstValidationError(err))
+		return
+	}
+
+	insp, err := h.svc.GetByID(r.Context(), id)
+	if err != nil {
+		writeServiceError(w, err, "failed to add photo")
+		return
+	}
+	if !canAccess(r.Context(), insp) {
+		respondError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
+	result, err := h.svc.AddPhoto(r.Context(), id, dto.Filename)
+	if err != nil {
+		writeServiceError(w, err, "failed to add photo")
+		return
+	}
+	respondJSON(w, http.StatusCreated, photoResponse{Photo: result.Photo, UploadURL: result.UploadURL})
+}
+
 func parseID(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {

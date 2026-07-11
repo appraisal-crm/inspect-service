@@ -35,6 +35,7 @@ func NewRouter(svc service.InspectionService, jwks keyfunc.Keyfunc, allowedOrigi
 		r.With(middleware.RequireRoles("inspector", "appraiser", "admin")).Get("/inspections", ih.List)
 		r.With(middleware.RequireRoles("inspector", "appraiser", "admin")).Get("/inspections/{id}", ih.GetByID)
 		r.With(middleware.RequireRoles("inspector", "appraiser", "admin")).Patch("/inspections/{id}", ih.Update)
+		r.With(middleware.RequireRoles("inspector")).Post("/inspections/{id}/photos", ih.AddPhoto)
 		r.With(middleware.RequireRoles("inspector")).Post("/inspections/{id}/complete", ih.Complete)
 	})
 
